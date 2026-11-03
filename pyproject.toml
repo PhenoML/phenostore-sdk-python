@@ -36,7 +36,7 @@ dev = ["build>=1.3,<2", "pytest>=8.4,<10", "pytest-asyncio>=1.2,<2", "ruff==0.17
 packages = ["phenostore"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/phenostore", "/api", "/tools", "/tests", "/examples", "/Makefile", "/openapi-python-client.yaml", "/uv.lock", "/README.md", "/LICENSE"]
+include = ["/phenostore", "/api", "/tools", "/tests", "/examples", "/.github/scripts", "/Makefile", "/openapi-python-client.yaml", "/uv.lock", "/README.md", "/LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

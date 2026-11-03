@@ -148,6 +148,8 @@ CI tests Python 3.11–3.15, checks formatting/types and regeneration, and build
 
 To upgrade the generator, run `uv add --project tools openapi-python-client==<version>`, then `make generate test lint check-generated build`. Commit the tooling lockfile and generated changes together. Dependabot's tooling PRs may need this regeneration step before CI can pass.
 
+Regeneration PRs are created and updated with `git` and the GitHub CLI (`gh`), using the automation-owned `sdk/regenerate` branch. Only the imported spec and generated client are committed. If regeneration produces no changes relative to `main`, an existing regeneration PR is closed. Branch updates use an explicit force-with-lease check, so a concurrent push causes the workflow to fail instead of overwriting it.
+
 Release Please prepares version/changelog PRs after conventional commits reach `main`. Publishing is intentionally left to repository owners until a PyPI project and release credentials/trusted publisher are configured.
 
 ## License

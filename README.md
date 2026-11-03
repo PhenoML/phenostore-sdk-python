@@ -7,7 +7,13 @@ This follows the [Go SDK](https://github.com/PhenoML/phenostore-sdk-go) design: 
 
 ## Installation
 
-From a checkout (the package has not yet been published to PyPI):
+Install a published release from PyPI:
+
+```sh
+pip install phenostore-sdk-python
+```
+
+Or install from a checkout:
 
 ```sh
 pip install .
@@ -150,7 +156,15 @@ To upgrade the generator, run `uv add --project tools openapi-python-client==<ve
 
 Regeneration PRs are created and updated with `git` and the GitHub CLI (`gh`), using the automation-owned `sdk/regenerate` branch. Only the imported spec and generated client are committed. If regeneration produces no changes relative to `main`, an existing regeneration PR is closed. Branch updates use an explicit force-with-lease check, so a concurrent push causes the workflow to fail instead of overwriting it.
 
-Release Please prepares version/changelog PRs after conventional commits reach `main`. Publishing is intentionally left to repository owners until a PyPI project and release credentials/trusted publisher are configured.
+## Releases and PyPI publishing
+
+Release Please prepares version/changelog PRs after conventional commits reach `main`. Merging a release PR creates a GitHub release and starts package publication in the same `release-please.yml` workflow. Ordinary pushes that do not create a release do not publish a package.
+
+The build job checks out the exact released commit, verifies that the package versions match the release, runs the tests/lint/generation checks, and builds the wheel and source distribution. It installs and smoke tests both distributions in isolated environments before handing them to a separate publish job. Only the publish job can request an OIDC token; it runs in the `pypi` GitHub environment and uploads with `uv publish --trusted-publishing always`. No stored PyPI API token is required.
+
+The PyPI Trusted Publisher must identify owner `PhenoML`, repository `phenostore-sdk-python`, workflow filename `release-please.yml`, and environment `pypi`. For the first upload, configure a pending publisher for project `phenostore-sdk-python`. GitHub creates the referenced environment on first use if it does not already exist.
+
+If an upload fails, re-run the failed jobs in that workflow run. The publisher checks PyPI for files already uploaded, allowing a partially completed upload to be retried. Re-running the entire workflow may not publish because Release Please only signals a newly created release once.
 
 ## License
 

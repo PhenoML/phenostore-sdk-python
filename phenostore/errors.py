@@ -55,8 +55,8 @@ def _has_status(error: BaseException | None, status: int) -> bool:
     seen: set[int] = set()
     while error is not None and id(error) not in seen:
         seen.add(id(error))
-        if isinstance(error, OperationOutcomeError) and error.status_code == status:
-            return True
+        if isinstance(error, OperationOutcomeError):
+            return error.status_code == status
         error = error.__cause__ or error.__context__
     return False
 

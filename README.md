@@ -104,7 +104,7 @@ Both clients accept `scopes=[...]`, `timeout=30.0` (seconds or `httpx.Timeout`),
 
 ## Errors
 
-Convenience methods raise `OperationOutcomeError` for non-2xx API responses, including non-JSON error bodies. It exposes `status_code`, raw `body` bytes, parsed `outcome` when available, and the original HTTPX `response` with headers. Its message includes the first FHIR issue when present. `is_not_found`, `is_gone`, `is_conflict` (HTTP 412), and `is_forbidden` also inspect chained exceptions.
+Convenience methods raise `OperationOutcomeError` for non-2xx API responses, including non-JSON error bodies. It exposes `status_code`, raw `body` bytes, parsed `outcome` when available, and the original HTTPX `response` with headers. Its message includes the first FHIR issue when present. `is_not_found`, `is_gone`, `is_conflict` (HTTP 412), and `is_forbidden` classify the first `OperationOutcomeError` encountered, including through chained exception wrappers. Earlier API failures in its history do not affect that classification.
 
 Invalid JSON/object responses raise `InvalidResponseError`. HTTPX connection and timeout exceptions propagate unchanged.
 

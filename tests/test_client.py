@@ -156,6 +156,34 @@ async def test_outcome_errors_and_helpers(client, server, status, helper):
 
 
 @pytest.mark.parametrize(
+    "earlier_status,current_status",
+    [(404, 403), (410, 404), (412, 410), (403, 412), (404, 500)],
+)
+async def test_status_helpers_stop_at_the_first_api_error(
+    client, server, earlier_status, current_status
+):
+    server.response = httpx.Response(earlier_status)
+    with pytest.raises(OperationOutcomeError) as caught:
+        try:
+            await call(client.read_resource, "Patient", "pat-123")
+        except OperationOutcomeError:
+            server.response = httpx.Response(current_status)
+            await call(client.create_resource, "Patient", PATIENT)
+
+    error = caught.value
+    assert error.status_code == current_status
+    assert isinstance(error.__context__, OperationOutcomeError)
+    assert error.__context__.status_code == earlier_status
+    for status, helper in [
+        (404, is_not_found),
+        (410, is_gone),
+        (412, is_conflict),
+        (403, is_forbidden),
+    ]:
+        assert helper(error) is (current_status == status)
+
+
+@pytest.mark.parametrize(
     "body", [b"gateway error", b"[]", b"null", b'{"issue": {}}', b'{"issue": [null]}', b"\xff"]
 )
 async def test_non_fhir_error_bodies_are_retained(client, server, body):

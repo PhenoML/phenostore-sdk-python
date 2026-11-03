@@ -11,8 +11,12 @@ pr_number=$(gh pr list --repo "$GH_REPO" --base main --head "$branch" \
   --jq 'map(select(.isCrossRepository == false))[0].number // empty')
 
 git add -- api/openapi.yaml phenostore/gen/
+if [[ "${INCLUDE_WRAPPER_CHANGES:-false}" == "true" ]]; then
+  # The workflow enables this only after Claude adaptation and validation pass.
+  git add -- phenostore/ examples/ tests/ README.md
+fi
 if git diff --cached --quiet; then
-  echo "Generated spec and client already match main."
+  echo "SDK and spec already match main."
   if [[ -n "$pr_number" ]]; then
     gh pr close "$pr_number" --repo "$GH_REPO"
   fi
@@ -38,7 +42,7 @@ Spec identifier: ${SPEC_SHA:-manual regeneration from the committed spec}
 Phenostore commit: ${PHENOSTORE_SHA:-not supplied}
 
 Validation: tests, lint, type checking, generation consistency, and package build.
-Changes requiring wrapper updates must be fixed before this workflow can open a PR.
+Any required automatic wrapper adaptations are included in this PR and have passed validation.
 EOF
 
 if [[ -n "$pr_number" ]]; then

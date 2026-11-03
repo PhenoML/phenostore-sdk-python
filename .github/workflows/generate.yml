@@ -49,13 +49,40 @@ jobs:
               raise SystemExit("spec_b64 must contain the upstream OpenAPI document")
           Path("api/openapi.yaml").write_bytes(spec)
           PY
-      - name: Generate and validate
+      - name: Generate client
+        run: make install generate
+      - name: Check SDK compatibility
+        id: compatibility
+        continue-on-error: true
+        run: make test lint check-generated build
+      - name: Check Claude credentials for adaptation
+        if: steps.compatibility.outcome == 'failure'
+        env:
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
         run: |
-          make install generate test lint check-generated build
+          if [[ -z "$CLAUDE_API_KEY" ]]; then
+            echo "::error::SDK adaptation requires the CLAUDE_API_KEY Actions secret."
+            exit 1
+          fi
+      - name: Adapt wrapper to generated changes
+        id: adapt
+        if: steps.compatibility.outcome == 'failure'
+        uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1.0.240
+        with:
+          anthropic_api_key: ${{ secrets.CLAUDE_API_KEY }}
+          github_token: ${{ github.token }}
+          prompt: Read and follow the instructions in .github/prompts/adapt-to-generated-changes.md
+          claude_args: >-
+            --model opus --max-turns 40
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(make:*),Bash(uv:*),Bash(git diff:*),Bash(git status:*)"
+      - name: Verify adapted SDK
+        if: steps.compatibility.outcome == 'failure'
+        run: make test lint check-generated build
       - name: Open or update regeneration PR
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           SPEC_SHA: ${{ github.event.client_payload.spec_sha }}
           PHENOSTORE_SHA: ${{ github.event.client_payload.phenostore_sha }}
+          INCLUDE_WRAPPER_CHANGES: ${{ steps.adapt.outcome == 'success' }}
         run: bash .github/scripts/open-regeneration-pr.sh

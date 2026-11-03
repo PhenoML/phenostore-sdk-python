@@ -30,7 +30,15 @@ def publishing(tmp_path):
     subprocess.run(["git", "clone", str(remote), str(checkout)], check=True, capture_output=True)
     git(checkout, "config", "user.name", "Test")
     git(checkout, "config", "user.email", "test@example.test")
-    for name in ["api/openapi.yaml", "phenostore/gen/client.py", "README.md"]:
+    for name in [
+        "api/openapi.yaml",
+        "phenostore/gen/client.py",
+        "phenostore/client.py",
+        "tests/test_client.py",
+        "examples/basic.py",
+        "README.md",
+        ".github/workflows/ci.yml",
+    ]:
         target = checkout / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("original\n")
@@ -142,6 +150,31 @@ def test_update_existing_pr_and_manual_metadata(publishing):
     request = publishing.calls()[-1]
     assert request["args"][:3] == ["pr", "edit", "42"]
     assert "manual regeneration" in request["body"]
+
+
+def test_validated_wrapper_adaptations_are_committed(publishing):
+    publishing.change()
+    for name in ["phenostore/client.py", "tests/test_client.py", "examples/basic.py", "README.md"]:
+        (publishing.checkout / name).write_text("adapted\n")
+    (publishing.checkout / "tests/test_new_contract.py").write_text("new regression coverage\n")
+    (publishing.checkout / ".github/workflows/ci.yml").write_text("unrelated workflow change\n")
+
+    result = publishing.run(INCLUDE_WRAPPER_CHANGES="true")
+    assert result.returncode == 0, result.stderr
+    for name in ["phenostore/client.py", "tests/test_client.py", "examples/basic.py", "README.md"]:
+        assert git(publishing.remote, "show", f"sdk/regenerate:{name}") == "adapted"
+    assert git(publishing.remote, "show", "sdk/regenerate:tests/test_new_contract.py") == (
+        "new regression coverage"
+    )
+    assert git(publishing.remote, "show", "sdk/regenerate:.github/workflows/ci.yml") == "original"
+
+
+def test_wrapper_adaptations_require_explicit_inclusion(publishing):
+    publishing.change()
+    (publishing.checkout / "phenostore/client.py").write_text("unvalidated adaptation\n")
+    result = publishing.run(INCLUDE_WRAPPER_CHANGES="false")
+    assert result.returncode == 0, result.stderr
+    assert git(publishing.remote, "show", "sdk/regenerate:phenostore/client.py") == "original"
 
 
 def test_lookup_failure_does_not_push(publishing):

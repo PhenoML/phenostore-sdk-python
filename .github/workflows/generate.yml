@@ -6,8 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: regenerate-sdk
@@ -16,6 +15,10 @@ concurrency:
 jobs:
   regenerate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -55,21 +58,29 @@ jobs:
         id: compatibility
         continue-on-error: true
         run: make test lint check-generated build
-      - name: Check Claude credentials for adaptation
+      - name: Check Anthropic federation configuration
         if: steps.compatibility.outcome == 'failure'
         env:
-          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+          ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
         run: |
-          if [[ -z "$CLAUDE_API_KEY" ]]; then
-            echo "::error::SDK adaptation requires the CLAUDE_API_KEY Actions secret."
-            exit 1
-          fi
+          for name in ANTHROPIC_ORGANIZATION_ID ANTHROPIC_FEDERATION_RULE_ID ANTHROPIC_SERVICE_ACCOUNT_ID; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Set the $name Actions variable for Anthropic OIDC federation."
+              exit 1
+            fi
+          done
       - name: Adapt wrapper to generated changes
         id: adapt
         if: steps.compatibility.outcome == 'failure'
         uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1.0.240
         with:
-          anthropic_api_key: ${{ secrets.CLAUDE_API_KEY }}
+          anthropic_organization_id: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          anthropic_federation_rule_id: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          anthropic_service_account_id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          anthropic_workspace_id: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+          anthropic_oidc_audience: https://api.anthropic.com
           github_token: ${{ github.token }}
           prompt: Read and follow the instructions in .github/prompts/adapt-to-generated-changes.md
           claude_args: >-

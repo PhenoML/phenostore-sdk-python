@@ -1,0 +1,62 @@
+name: Regenerate SDK
+
+on:
+  repository_dispatch:
+    types: [spec-updated]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: regenerate-sdk
+  cancel-in-progress: false
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+      - run: python -m pip install uv==0.13.7
+      - name: Import upstream spec
+        if: github.event_name == 'repository_dispatch'
+        env:
+          SPEC_B64: ${{ github.event.client_payload.spec_b64 }}
+          SPEC_SHA: ${{ github.event.client_payload.spec_sha }}
+        run: |
+          python - <<'PY'
+          import base64
+          import os
+          import re
+          from pathlib import Path
+          if not re.fullmatch(r"[a-fA-F0-9]{7,64}", os.environ["SPEC_SHA"]):
+              raise SystemExit("spec_sha must be a hexadecimal commit or content identifier")
+          spec = base64.b64decode(os.environ["SPEC_B64"], validate=True)
+          if not spec:
+              raise SystemExit("spec_b64 must contain the upstream OpenAPI document")
+          Path("api/openapi.yaml").write_bytes(spec)
+          PY
+      - name: Generate and validate
+        run: |
+          make install generate test lint check-generated build
+      - name: Open regeneration PR
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
+        with:
+          branch: sdk/regenerate
+          base: main
+          commit-message: "feat: regenerate SDK from upstream OpenAPI spec"
+          title: "feat: regenerate SDK from upstream OpenAPI spec"
+          body: |
+            Regenerates the Python SDK from the upstream Phenostore API contract.
+
+            Spec identifier: `${{ github.event.client_payload.spec_sha }}`
+
+            Validation: tests, lint, type checking, generation consistency, and package build.
+            Changes requiring wrapper updates must be fixed before this workflow can open a PR.
+          add-paths: |
+            api/openapi.yaml
+            phenostore/gen/

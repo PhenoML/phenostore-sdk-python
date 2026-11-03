@@ -1,6 +1,6 @@
 # phenostore-sdk-python
 
-Python SDK for [Phenostore](https://phenoml.com), a FHIR-compatible data store by Phenoml.
+Python SDK for [Phenostore](https://phenoml.com), a FHIR-compatible data store by PhenoML Inc.
 Requires Python 3.11 or later.
 
 This follows the [Go SDK](https://github.com/PhenoML/phenostore-sdk-go) design: a generated OpenAPI client and models, wrapped with OAuth2 authentication, convenience methods, and FHIR error helpers.

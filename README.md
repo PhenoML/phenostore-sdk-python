@@ -15,6 +15,12 @@ pip install .
 
 Import the SDK as `phenostore`.
 
+## Python runtime support
+
+We support CPython feature versions that still receive upstream bug fixes or security fixes, currently Python 3.11–3.15. CI tests every supported version. New stable versions are added after compatibility checks, and the supported range is reviewed when Python releases a new feature version or an existing version reaches end of life. See the [upstream support schedule](https://devguide.python.org/versions/).
+
+Support for a version may be removed after upstream end of life, with advance notice and an explicit release-note entry. Python 3.11 remains supported until at least its upstream end of life in October 2027. Runtime requirements are declared in `requires-python`; we do not impose an upper version bound without a known incompatibility.
+
 ## Usage
 
 ```python
@@ -138,7 +144,7 @@ make test lint check-generated build
 
 Generator dependencies are pinned separately in `tools/pyproject.toml` and `tools/uv.lock` and are not runtime dependencies. The generator temporarily removes duplicate request-body encodings for identical schemas to work around a multi-media-type bug in 0.29.1, retaining the first media type (FHIR JSON). It never changes the imported spec. Formatting is isolated from local settings. `make check-generated` regenerates in a temporary directory and compares every generated file without changing the checkout.
 
-CI tests Python 3.11–3.14, checks formatting/types and regeneration, and builds a wheel and source distribution. The regeneration workflow accepts the same `spec-updated` repository dispatch payload as the Go SDK (`spec_b64`, `spec_sha`) and opens a PR after validation. Configure the upstream dispatcher to include this repository to enable automatic spec updates. A manual workflow run regenerates from the committed spec. PRs opened with `GITHUB_TOKEN` do not trigger normal PR workflows automatically; run CI manually on the PR branch, or configure a GitHub App token for PR creation.
+CI tests Python 3.11–3.15, checks formatting/types and regeneration, and builds a wheel and source distribution. CI and regeneration use the pinned `astral-sh/setup-uv` action to install a specific uv version and cache dependencies using both lockfiles, with separate caches for each Python version. The regeneration workflow accepts the same `spec-updated` repository dispatch payload as the Go SDK (`spec_b64`, `spec_sha`) and opens a PR after validation. Configure the upstream dispatcher to include this repository to enable automatic spec updates. A manual workflow run regenerates from the committed spec. PRs opened with `GITHUB_TOKEN` do not trigger normal PR workflows automatically; run CI manually on the PR branch, or configure a GitHub App token for PR creation.
 
 To upgrade the generator, run `uv add --project tools openapi-python-client==<version>`, then `make generate test lint check-generated build`. Commit the tooling lockfile and generated changes together. Dependabot's tooling PRs may need this regeneration step before CI can pass.
 

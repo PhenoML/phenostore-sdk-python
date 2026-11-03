@@ -6,6 +6,7 @@
 - The handwritten wrapper intentionally uses the pinned generator's request builders so it can retain raw FHIR responses, normalize errors, and accept arbitrary search parameters. Run contract tests when upgrading the generator.
 - Run `make test lint check-generated build` before completing SDK changes.
 - Python 3.11 is the minimum supported version. Keep packaging, CI, and documentation aligned.
+- Support upstream-maintained CPython versions, including security-only releases, and test each supported version in CI. Announce runtime removals before dropping support after upstream end of life; document them in release notes.
 
 ## Structure
 

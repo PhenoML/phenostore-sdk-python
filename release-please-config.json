@@ -11,7 +11,7 @@
         {
           "type": "toml",
           "path": "uv.lock",
-          "jsonpath": "$.package[?(@.name=='phenostore-sdk-python')].version"
+          "jsonpath": "$.package[?(@.name.value=='phenostore-sdk-python')].version"
         }
       ]
     }

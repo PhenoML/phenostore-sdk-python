@@ -1,11 +1,18 @@
 UV ?= uv
 
-.PHONY: install generate check-generated test lint format build
+.PHONY: install generate update-generator check-generated test lint format build
 install:
 	$(UV) sync --locked
 
 generate:
 	$(UV) run --project tools --locked python tools/generate.py
+
+# Remove existing exact pins so uv can select and pin newer releases.
+# Keep generator/formatter pins and regenerated output in the same change.
+update-generator:
+	$(UV) remove --project tools --frozen openapi-python-client ruff
+	$(UV) add --project tools --bounds exact --upgrade openapi-python-client ruff
+	$(MAKE) generate test lint check-generated build
 
 check-generated:
 	$(UV) run --project tools --locked python tools/generate.py --check

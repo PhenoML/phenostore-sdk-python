@@ -9,14 +9,20 @@ updates:
     groups:
       python:
         patterns: ["*"]
+      # Cover vulnerable transitive dependencies as well as direct ones.
+      python-security:
+        applies-to: security-updates
+        patterns: ["*"]
   - package-ecosystem: uv
     directory: /tools
     schedule:
       interval: monthly
-    cooldown:
-      default-days: 14
+    # Routine upgrades must regenerate and validate the SDK in the same PR.
+    # Security updates remain enabled and also require regeneration.
+    open-pull-requests-limit: 0
     groups:
-      generator:
+      generator-security:
+        applies-to: security-updates
         patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /

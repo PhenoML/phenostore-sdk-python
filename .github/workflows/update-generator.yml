@@ -1,0 +1,76 @@
+name: Update SDK generator
+
+on:
+  schedule:
+    - cron: "0 9 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-sdk-generator
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+      - name: Check for an existing maintenance PR
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch=$(gh pr list --base main --state open --limit 100 --json headRefName,isCrossRepository \
+            --jq '[.[] | select(.isCrossRepository == false) | select(.headRefName | startswith("maintenance/generator-"))][0].headRefName // ""')
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        if: steps.existing.outputs.branch == ''
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        if: steps.existing.outputs.branch == ''
+        with:
+          version: "0.13.7"
+          enable-cache: true
+          cache-suffix: python-3.11
+          cache-dependency-glob: |
+            uv.lock
+            tools/uv.lock
+      - name: Upgrade generator, regenerate, and validate SDK
+        if: steps.existing.outputs.branch == ''
+        run: make update-generator
+      - name: Open maintenance PR
+        if: steps.existing.outputs.branch == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- tools/pyproject.toml tools/uv.lock phenostore/gen/; then
+            echo "Generator and generated client are already current."
+            exit 0
+          fi
+
+          branch="maintenance/generator-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git switch -c "$branch"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- tools/pyproject.toml tools/uv.lock phenostore/gen/
+          git commit -m "fix: update SDK generator and regenerate client"
+          git push -u origin "$branch"
+
+          cat > "$RUNNER_TEMP/generator-pr.md" <<'EOF'
+          Updates the pinned generator, formatter, and tooling dependencies, and regenerates the Python SDK from the committed OpenAPI spec in the same change.
+
+          Tests, lint, type checking, generation consistency, and package builds passed on Python 3.11 before opening this PR. Review the generated API and behavior changes before merging; use a `feat:` or `feat!:` title when appropriate.
+
+          PRs created with GITHUB_TOKEN do not automatically trigger PR workflows. Run CI manually on this branch to test every supported Python version before merging.
+          EOF
+          gh pr create --base main --head "$branch" \
+            --title "fix: update SDK generator and regenerate client" \
+            --body-file "$RUNNER_TEMP/generator-pr.md"

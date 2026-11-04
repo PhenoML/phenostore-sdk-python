@@ -74,6 +74,7 @@ if args[:2] == ["pr", "list"]:
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
         "GH_REPO": "example/sdk",
         "GH_TOKEN": "fake-test-token",
+        "GITHUB_EVENT_NAME": "repository_dispatch",
         "SPEC_SHA": "deadbeef",
         "PHENOSTORE_SHA": "deadbeef01234567",
         "TEST_GH_CALLS": str(calls),
@@ -84,7 +85,7 @@ if args[:2] == ["pr", "list"]:
             return subprocess.run(
                 ["bash", str(SCRIPT), *args],
                 cwd=checkout,
-                env={**env, **settings},
+                env={key: value for key, value in {**env, **settings}.items() if value is not None},
                 capture_output=True,
                 text=True,
             )
@@ -127,10 +128,30 @@ def test_no_changes_closes_an_obsolete_pr(publishing):
     assert git(publishing.remote, "branch", "--list", "sdk/regenerate") == ""
 
 
-def test_create_pr_commits_only_generated_changes(publishing):
-    original_main = git(publishing.remote, "rev-parse", "main")
+@pytest.mark.parametrize("event", ["workflow_dispatch", None])
+def test_no_changes_without_upstream_spec_preserves_pending_pr(publishing, event):
     publishing.change()
     result = publishing.run()
+    assert result.returncode == 0, result.stderr
+    upstream_sha = publishing.remote_branch()
+    git(publishing.checkout, "switch", "main")
+    previous_calls = len(publishing.calls())
+
+    result = publishing.run(
+        GITHUB_EVENT_NAME=event, TEST_PR_NUMBER="42", SPEC_SHA="", PHENOSTORE_SHA=""
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "already match main" in result.stdout
+    assert publishing.remote_branch() == upstream_sha
+    assert [entry["args"][1] for entry in publishing.calls()[previous_calls:]] == ["list"]
+
+
+@pytest.mark.parametrize("event", ["repository_dispatch", "workflow_dispatch"])
+def test_create_pr_commits_only_generated_changes(publishing, event):
+    original_main = git(publishing.remote, "rev-parse", "main")
+    publishing.change()
+    result = publishing.run(GITHUB_EVENT_NAME=event)
     assert result.returncode == 0, result.stderr
     assert git(publishing.remote, "rev-parse", "main") == original_main
     assert git(publishing.remote, "show", "sdk/regenerate:api/openapi.yaml") == "updated spec"
@@ -151,7 +172,9 @@ def test_update_existing_pr_and_manual_metadata(publishing):
     git(publishing.checkout, "switch", "main")
     (publishing.checkout / "api/openapi.yaml").write_text("newer spec\n")
     (publishing.checkout / ".commit-message").write_text("fix: correct response parsing\n")
-    result = publishing.run(TEST_PR_NUMBER="42", SPEC_SHA="", PHENOSTORE_SHA="")
+    result = publishing.run(
+        TEST_PR_NUMBER="42", SPEC_SHA="", PHENOSTORE_SHA="", GITHUB_EVENT_NAME="workflow_dispatch"
+    )
     assert result.returncode == 0, result.stderr
     assert git(publishing.remote, "show", "sdk/regenerate:api/openapi.yaml") == "newer spec"
     assert sum(entry["args"][:2] == ["pr", "create"] for entry in publishing.calls()) == 1

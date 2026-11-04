@@ -49,7 +49,8 @@ pr_number=$(gh pr list --repo "$GH_REPO" --base main --head "$branch" \
 
 if git diff --cached --quiet; then
   echo "SDK and spec already match main."
-  if [[ -n "$pr_number" ]]; then
+  # Only an upstream dispatch supplies the spec needed to identify an obsolete PR.
+  if [[ -n "$pr_number" && "${GITHUB_EVENT_NAME:-}" == "repository_dispatch" ]]; then
     gh pr close "$pr_number" --repo "$GH_REPO"
   fi
   exit 0

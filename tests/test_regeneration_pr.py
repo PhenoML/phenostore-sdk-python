@@ -74,17 +74,18 @@ if args[:2] == ["pr", "list"]:
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
         "GH_REPO": "example/sdk",
         "GH_TOKEN": "fake-test-token",
+        "GITHUB_EVENT_NAME": "repository_dispatch",
         "SPEC_SHA": "deadbeef",
         "PHENOSTORE_SHA": "deadbeef01234567",
         "TEST_GH_CALLS": str(calls),
     }
 
     class Publishing:
-        def run(self, **settings):
+        def run(self, *args, **settings):
             return subprocess.run(
-                ["bash", str(SCRIPT)],
+                ["bash", str(SCRIPT), *args],
                 cwd=checkout,
-                env={**env, **settings},
+                env={key: value for key, value in {**env, **settings}.items() if value is not None},
                 capture_output=True,
                 text=True,
             )
@@ -99,6 +100,13 @@ if args[:2] == ["pr", "list"]:
 
         def remote_branch(self):
             return git(remote, "rev-parse", "--verify", "refs/heads/sdk/regenerate")
+
+        def check(self, **settings):
+            output = tmp_path / "github-output"
+            output.write_text("")
+            result = self.run("--check", GITHUB_OUTPUT=str(output), **settings)
+            assert result.returncode == 0, result.stderr
+            return dict(line.split("=", 1) for line in output.read_text().splitlines())
 
     context = Publishing()
     context.checkout, context.remote = checkout, remote
@@ -120,10 +128,30 @@ def test_no_changes_closes_an_obsolete_pr(publishing):
     assert git(publishing.remote, "branch", "--list", "sdk/regenerate") == ""
 
 
-def test_create_pr_commits_only_generated_changes(publishing):
-    original_main = git(publishing.remote, "rev-parse", "main")
+@pytest.mark.parametrize("event", ["workflow_dispatch", None])
+def test_no_changes_without_upstream_spec_preserves_pending_pr(publishing, event):
     publishing.change()
     result = publishing.run()
+    assert result.returncode == 0, result.stderr
+    upstream_sha = publishing.remote_branch()
+    git(publishing.checkout, "switch", "main")
+    previous_calls = len(publishing.calls())
+
+    result = publishing.run(
+        GITHUB_EVENT_NAME=event, TEST_PR_NUMBER="42", SPEC_SHA="", PHENOSTORE_SHA=""
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "already match main" in result.stdout
+    assert publishing.remote_branch() == upstream_sha
+    assert [entry["args"][1] for entry in publishing.calls()[previous_calls:]] == ["list"]
+
+
+@pytest.mark.parametrize("event", ["repository_dispatch", "workflow_dispatch"])
+def test_create_pr_commits_only_generated_changes(publishing, event):
+    original_main = git(publishing.remote, "rev-parse", "main")
+    publishing.change()
+    result = publishing.run(GITHUB_EVENT_NAME=event)
     assert result.returncode == 0, result.stderr
     assert git(publishing.remote, "rev-parse", "main") == original_main
     assert git(publishing.remote, "show", "sdk/regenerate:api/openapi.yaml") == "updated spec"
@@ -143,13 +171,22 @@ def test_update_existing_pr_and_manual_metadata(publishing):
     assert publishing.run().returncode == 0
     git(publishing.checkout, "switch", "main")
     (publishing.checkout / "api/openapi.yaml").write_text("newer spec\n")
-    result = publishing.run(TEST_PR_NUMBER="42", SPEC_SHA="", PHENOSTORE_SHA="")
+    (publishing.checkout / ".commit-message").write_text("fix: correct response parsing\n")
+    result = publishing.run(
+        TEST_PR_NUMBER="42", SPEC_SHA="", PHENOSTORE_SHA="", GITHUB_EVENT_NAME="workflow_dispatch"
+    )
     assert result.returncode == 0, result.stderr
     assert git(publishing.remote, "show", "sdk/regenerate:api/openapi.yaml") == "newer spec"
     assert sum(entry["args"][:2] == ["pr", "create"] for entry in publishing.calls()) == 1
     request = publishing.calls()[-1]
     assert request["args"][:3] == ["pr", "edit", "42"]
     assert "manual regeneration" in request["body"]
+    assert request["args"][request["args"].index("--title") + 1] == (
+        "fix: correct response parsing"
+    )
+    assert git(publishing.remote, "log", "-1", "--format=%s", "sdk/regenerate") == (
+        "fix: correct response parsing"
+    )
 
 
 def test_validated_wrapper_adaptations_are_committed(publishing):
@@ -220,3 +257,141 @@ def test_concurrent_branch_update_is_not_overwritten(publishing):
     assert result.returncode != 0
     assert publishing.remote_branch() == concurrent
     assert publishing.calls()[-1]["args"][:2] == ["pr", "list"]
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "feat: add Encounter support",
+        "feat!: remove obsolete resource exports",
+        "fix: preserve empty Bundle responses",
+        "chore: refresh generated documentation",
+    ],
+)
+def test_classified_title_is_used_for_commit_and_pr(publishing, title):
+    publishing.change()
+    selected = publishing.check()
+    assert selected["changed"] == "true"
+    (publishing.checkout / ".commit-message").write_text(title + "\n")
+    result = publishing.run(VALIDATED_TREE=selected["tree"])
+    assert result.returncode == 0, result.stderr
+    assert git(publishing.remote, "log", "-1", "--format=%s", "sdk/regenerate") == title
+    request = publishing.calls()[-1]
+    assert request["args"][request["args"].index("--title") + 1] == title
+    assert "Review the title before merging" in request["body"]
+    assert not (publishing.checkout / ".commit-message").exists()
+    assert ".commit-message" not in git(
+        publishing.remote, "ls-tree", "--name-only", "sdk/regenerate"
+    )
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        None,
+        "",
+        "\n",
+        "feat:",
+        "fix:  two spaces",
+        "fix!: unsupported breaking prefix",
+        "chore!: unsupported breaking prefix",
+        "docs: unsupported prefix",
+        "feat: " + "x" * 67,
+        "fix: first line\nchore: second line",
+        "fix: control\rcharacter",
+    ],
+)
+def test_missing_or_invalid_classification_uses_fixed_fallback(publishing, message):
+    publishing.change()
+    if message is not None:
+        (publishing.checkout / ".commit-message").write_text(message)
+    result = publishing.run()
+    assert result.returncode == 0, result.stderr
+    fallback = "feat: regenerate SDK from upstream OpenAPI spec"
+    assert git(publishing.remote, "log", "-1", "--format=%s", "sdk/regenerate") == fallback
+    request = publishing.calls()[-1]
+    assert request["args"][request["args"].index("--title") + 1] == fallback
+    assert not (publishing.checkout / ".commit-message").exists()
+
+
+def test_failed_classifier_discards_partial_output(publishing):
+    publishing.change()
+    (publishing.checkout / ".commit-message").write_text("chore: incomplete classification\n")
+    result = publishing.run(CLASSIFICATION_SUCCEEDED="false")
+    assert result.returncode == 0, result.stderr
+    assert git(publishing.remote, "log", "-1", "--format=%s", "sdk/regenerate") == (
+        "feat: regenerate SDK from upstream OpenAPI spec"
+    )
+    assert not (publishing.checkout / ".commit-message").exists()
+
+
+@pytest.mark.parametrize("existing_pr", ["", "42"])
+def test_message_only_is_a_noop(publishing, existing_pr):
+    message = publishing.checkout / ".commit-message"
+    message.write_text("feat: this must not create a PR\n")
+    git(publishing.checkout, "add", ".commit-message")
+    result = publishing.run(TEST_PR_NUMBER=existing_pr)
+    assert result.returncode == 0, result.stderr
+    assert "already match main" in result.stdout
+    assert not message.exists()
+    assert [entry["args"][1] for entry in publishing.calls()] == (
+        ["list", "close"] if existing_pr else ["list"]
+    )
+    assert git(publishing.remote, "branch", "--list", "sdk/regenerate") == ""
+
+
+def test_check_noop_clears_stale_message_without_contacting_github(publishing):
+    message = publishing.checkout / ".commit-message"
+    message.write_text("feat: stale classification\n")
+    selected = publishing.check()
+    assert selected == {
+        "tree": git(publishing.checkout, "rev-parse", "HEAD^{tree}"),
+        "changed": "false",
+    }
+    assert not message.exists()
+
+
+@pytest.mark.parametrize(
+    ("path", "include_wrapper"),
+    [
+        ("api/openapi.yaml", "false"),
+        ("phenostore/gen/client.py", "false"),
+        ("phenostore/client.py", "true"),
+        ("tests/test_new_contract.py", "true"),
+    ],
+)
+def test_classifier_cannot_change_validated_files(publishing, path, include_wrapper):
+    publishing.change()
+    selected = publishing.check(INCLUDE_WRAPPER_CHANGES=include_wrapper)
+    (publishing.checkout / path).write_text("unvalidated classifier edit\n")
+    message = publishing.checkout / ".commit-message"
+    message.write_text("fix: plausible title\n")
+    result = publishing.run(
+        VALIDATED_TREE=selected["tree"], INCLUDE_WRAPPER_CHANGES=include_wrapper
+    )
+    assert result.returncode != 0
+    assert "differ from the validated diff" in result.stderr
+    assert not message.exists()
+    assert git(publishing.remote, "branch", "--list", "sdk/regenerate") == ""
+
+
+def test_classifier_cannot_delete_validated_files(publishing):
+    publishing.change()
+    selected = publishing.check()
+    (publishing.checkout / "phenostore/gen/client.py").unlink()
+    result = publishing.run(VALIDATED_TREE=selected["tree"])
+    assert result.returncode != 0
+    assert "differ from the validated diff" in result.stderr
+    assert git(publishing.remote, "branch", "--list", "sdk/regenerate") == ""
+
+
+def test_pre_staged_unselected_changes_are_excluded(publishing):
+    publishing.change()
+    git(publishing.checkout, "add", "README.md")
+    selected = publishing.check()
+    (publishing.checkout / ".github/workflows/ci.yml").write_text("unvalidated workflow\n")
+    git(publishing.checkout, "add", ".github/workflows/ci.yml")
+    result = publishing.run(VALIDATED_TREE=selected["tree"])
+    assert result.returncode == 0, result.stderr
+    assert git(publishing.remote, "show", "sdk/regenerate:README.md") == "original"
+    assert git(publishing.remote, "show", "sdk/regenerate:.github/workflows/ci.yml") == "original"

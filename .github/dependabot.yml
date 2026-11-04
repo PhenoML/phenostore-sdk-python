@@ -1,0 +1,29 @@
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 14
+    groups:
+      python:
+        patterns: ["*"]
+  - package-ecosystem: uv
+    directory: /tools
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 14
+    groups:
+      generator:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 14
+    groups:
+      actions:
+        patterns: ["*"]

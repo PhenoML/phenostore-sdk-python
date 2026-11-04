@@ -1,0 +1,4 @@
+package_name_override: gen
+project_name_override: phenostore-sdk-python
+# Formatting runs explicitly in tools/generate.py with the pinned tools environment.
+post_hooks: []

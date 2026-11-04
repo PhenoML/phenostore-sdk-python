@@ -34,7 +34,7 @@ fi
 branch="sdk/regenerate"
 title="feat: regenerate SDK from upstream OpenAPI spec"
 if [[ "${CLASSIFICATION_SUCCEEDED:-true}" == "true" && -s .commit-message ]]; then
-  candidate=$(cat .commit-message)
+  candidate=$(< .commit-message)
   if [[ "$candidate" =~ ^(feat:|fix:|feat!:|chore:)\ [^[:space:]] &&
         ! "$candidate" =~ [[:cntrl:]] && ${#candidate} -le 72 ]]; then
     title="$candidate"
@@ -42,7 +42,6 @@ if [[ "${CLASSIFICATION_SUCCEEDED:-true}" == "true" && -s .commit-message ]]; th
     echo "::notice::Invalid generated commit title; using the fallback title."
   fi
 fi
-rm -f .commit-message
 
 pr_number=$(gh pr list --repo "$GH_REPO" --base main --head "$branch" \
   --state open --json number,isCrossRepository \

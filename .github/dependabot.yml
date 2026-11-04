@@ -29,7 +29,7 @@ updates:
     schedule:
       interval: monthly
     cooldown:
-      default-days: 14
+      default-days: 30
     groups:
       actions:
         patterns: ["*"]

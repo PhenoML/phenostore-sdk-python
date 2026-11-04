@@ -1,4 +1,6 @@
 UV ?= uv
+GENERATOR_VERSION ?= latest
+export GENERATOR_VERSION
 
 .PHONY: install generate update-generator check-generated test lint format build
 install:
@@ -7,11 +9,16 @@ install:
 generate:
 	$(UV) run --project tools --locked python tools/generate.py
 
-# Remove existing exact pins so uv can select and pin newer releases.
+# Remove existing exact pins so uv can select and pin the requested releases.
 # Keep generator/formatter pins and regenerated output in the same change.
 update-generator:
 	$(UV) remove --project tools --frozen openapi-python-client ruff
-	$(UV) add --project tools --bounds exact --upgrade openapi-python-client ruff
+	@set -eu; \
+	generator=openapi-python-client; \
+	if [ "$$GENERATOR_VERSION" != latest ]; then \
+		generator="openapi-python-client==$$GENERATOR_VERSION"; \
+	fi; \
+	$(UV) add --project tools --bounds exact --upgrade "$$generator" ruff
 	$(MAKE) generate test lint check-generated build
 
 check-generated:

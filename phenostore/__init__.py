@@ -11,7 +11,7 @@ from .errors import (
     is_not_found,
 )
 
-__version__ = "0.1.1"  # x-release-please-version
+__version__ = "0.1.2"  # x-release-please-version
 
 __all__ = [
     "AsyncClient",

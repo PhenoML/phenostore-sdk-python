@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/PhenoML/phenostore-sdk-python/compare/phenostore-sdk-python-v0.1.1...phenostore-sdk-python-v0.1.2) (2026-11-05)
+
+
+### Features
+
+* regenerate SDK from upstream OpenAPI spec ([#14](https://github.com/PhenoML/phenostore-sdk-python/issues/14)) ([2ec98a5](https://github.com/PhenoML/phenostore-sdk-python/commit/2ec98a593c4b02706f270c8b4f6691d02226d1b3))
+
 ## [0.1.1](https://github.com/PhenoML/phenostore-sdk-python/compare/phenostore-sdk-python-v0.1.0...phenostore-sdk-python-v0.1.1) (2026-11-04)
 
 

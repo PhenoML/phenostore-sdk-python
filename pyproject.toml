@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "phenostore-sdk-python"
-version = "0.1.1"
+version = "0.1.2"
 description = "Python SDK for the Phenostore FHIR data API"
 readme = "README.md"
 requires-python = ">=3.11"
